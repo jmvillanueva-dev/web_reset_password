@@ -1,5 +1,6 @@
 let SUPABASE_URL = "";
 let SUPABASE_KEY = "";
+let accessToken = null;
 
 // Cargar configuración desde el servidor
 async function loadConfig() {
@@ -8,13 +9,111 @@ async function loadConfig() {
     const config = await response.json();
     SUPABASE_URL = config.supabaseUrl;
     SUPABASE_KEY = config.supabaseKey;
+    return true;
   } catch (error) {
     console.error("Error al cargar configuración:", error);
+    return false;
   }
 }
 
-// Cargar configuración al iniciar
-loadConfig();
+// Intercambiar el código por un access token (flujo PKCE)
+async function exchangeCodeForToken(code) {
+  try {
+    // Usar el endpoint verify para intercambiar el código
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: SUPABASE_KEY,
+      },
+      body: JSON.stringify({
+        type: "recovery",
+        token: code,
+      }),
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data.access_token;
+    } else {
+      console.error("Error al verificar código:", await response.json());
+      return null;
+    }
+  } catch (error) {
+    console.error("Error de conexión:", error);
+    return null;
+  }
+}
+
+// Obtener token de la URL
+function getTokenFromUrl() {
+  const urlParams = new URLSearchParams(window.location.search);
+  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+  // Verificar si hay un código (flujo PKCE)
+  const code = urlParams.get("code");
+  if (code) {
+    return { type: "code", value: code };
+  }
+
+  // Verificar si hay access_token directo (flujo implícito)
+  const token = urlParams.get("access_token") || hashParams.get("access_token");
+  if (token) {
+    return { type: "token", value: token };
+  }
+
+  return null;
+}
+
+// Inicializar la aplicación
+async function initApp() {
+  const errorDiv = document.getElementById("error");
+
+  // Cargar configuración primero
+  const configLoaded = await loadConfig();
+  if (!configLoaded) {
+    errorDiv.textContent = "Error al cargar la configuración";
+    errorDiv.style.display = "block";
+    return;
+  }
+
+  // Obtener token o código de la URL
+  const authData = getTokenFromUrl();
+
+  if (!authData) {
+    errorDiv.textContent = "Token inválido o expirado";
+    errorDiv.style.display = "block";
+    return;
+  }
+
+  if (authData.type === "code") {
+    // Flujo PKCE: intercambiar código por token
+    errorDiv.textContent = "Verificando enlace...";
+    errorDiv.style.display = "block";
+    errorDiv.style.backgroundColor = "#fef3cd";
+    errorDiv.style.color = "#856404";
+
+    accessToken = await exchangeCodeForToken(authData.value);
+
+    if (!accessToken) {
+      errorDiv.textContent =
+        "El enlace ha expirado o es inválido. Solicita uno nuevo.";
+      errorDiv.style.display = "block";
+      errorDiv.style.backgroundColor = "#ffe6e6";
+      errorDiv.style.color = "#d63031";
+      return;
+    }
+
+    // Ocultar mensaje de verificación
+    errorDiv.style.display = "none";
+  } else {
+    // Flujo implícito: usar token directamente
+    accessToken = authData.value;
+  }
+}
+
+// Iniciar la aplicación cuando se carga la página
+initApp();
 
 document.getElementById("resetForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -42,14 +141,9 @@ document.getElementById("resetForm").addEventListener("submit", async (e) => {
     return;
   }
 
-  // Obtener access token de la URL (puede venir como query param o hash)
-  const urlParams = new URLSearchParams(window.location.search);
-  const hashParams = new URLSearchParams(window.location.hash.substring(1));
-  const accessToken =
-    urlParams.get("access_token") || hashParams.get("access_token");
-
   if (!accessToken) {
-    errorDiv.textContent = "Token inválido o expirado";
+    errorDiv.textContent =
+      "Token inválido o expirado. Solicita un nuevo enlace.";
     errorDiv.style.display = "block";
     return;
   }
