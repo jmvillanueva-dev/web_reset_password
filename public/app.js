@@ -1,14 +1,28 @@
-let SUPABASE_URL = "";
-let SUPABASE_KEY = "";
-let accessToken = null;
+// Variables globales
+let supabaseClient = null;
 
-// Cargar configuración desde el servidor
-async function loadConfig() {
+// Elementos del DOM
+const resetForm = document.getElementById("resetForm");
+const passwordInput = document.getElementById("password");
+const confirmPasswordInput = document.getElementById("confirmPassword");
+const errorDiv = document.getElementById("error");
+const successDiv = document.getElementById("success");
+const submitBtn = document.getElementById("submitBtn");
+const btnText = document.getElementById("btnText");
+const btnLoader = document.getElementById("btnLoader");
+
+// Cargar configuración desde el servidor e inicializar Supabase
+async function initSupabase() {
   try {
     const response = await fetch("/api/config");
     const config = await response.json();
-    SUPABASE_URL = config.supabaseUrl;
-    SUPABASE_KEY = config.supabaseKey;
+
+    // Inicializar el cliente de Supabase
+    supabaseClient = supabase.createClient(
+      config.supabaseUrl,
+      config.supabaseKey
+    );
+
     return true;
   } catch (error) {
     console.error("Error al cargar configuración:", error);
@@ -16,172 +30,191 @@ async function loadConfig() {
   }
 }
 
-// Intercambiar el código por un access token (flujo PKCE)
-async function exchangeCodeForToken(code) {
-  try {
-    // Usar el endpoint verify para intercambiar el código
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/verify`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_KEY,
-      },
-      body: JSON.stringify({
-        type: "recovery",
-        token: code,
-      }),
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      return data.access_token;
-    } else {
-      console.error("Error al verificar código:", await response.json());
-      return null;
-    }
-  } catch (error) {
-    console.error("Error de conexión:", error);
-    return null;
-  }
+// Mostrar mensaje de error
+function showError(message) {
+  errorDiv.textContent = message;
+  errorDiv.style.display = "block";
+  errorDiv.style.backgroundColor = "#ffe6e6";
+  errorDiv.style.color = "#d63031";
+  successDiv.style.display = "none";
 }
 
-// Obtener token de la URL
-function getTokenFromUrl() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const hashParams = new URLSearchParams(window.location.hash.substring(1));
+// Mostrar mensaje de éxito
+function showSuccess(message) {
+  successDiv.textContent = message;
+  successDiv.style.display = "block";
+  errorDiv.style.display = "none";
+}
 
-  // Verificar si hay un código (flujo PKCE)
-  const code = urlParams.get("code");
-  if (code) {
-    return { type: "code", value: code };
-  }
+// Mostrar mensaje de información/cargando
+function showInfo(message) {
+  errorDiv.textContent = message;
+  errorDiv.style.display = "block";
+  errorDiv.style.backgroundColor = "#fef3cd";
+  errorDiv.style.color = "#856404";
+  successDiv.style.display = "none";
+}
 
-  // Verificar si hay access_token directo (flujo implícito)
-  const token = urlParams.get("access_token") || hashParams.get("access_token");
-  if (token) {
-    return { type: "token", value: token };
-  }
+// Ocultar mensajes
+function hideMessages() {
+  errorDiv.style.display = "none";
+  successDiv.style.display = "none";
+}
 
-  return null;
+// Habilitar/deshabilitar el formulario
+function setFormEnabled(enabled) {
+  submitBtn.disabled = !enabled;
+  passwordInput.disabled = !enabled;
+  confirmPasswordInput.disabled = !enabled;
 }
 
 // Inicializar la aplicación
 async function initApp() {
-  const errorDiv = document.getElementById("error");
+  // Deshabilitar el formulario mientras se inicializa
+  setFormEnabled(false);
+  showInfo("Verificando enlace...");
 
-  // Cargar configuración primero
-  const configLoaded = await loadConfig();
-  if (!configLoaded) {
-    errorDiv.textContent = "Error al cargar la configuración";
-    errorDiv.style.display = "block";
+  // Inicializar Supabase
+  const initialized = await initSupabase();
+  if (!initialized) {
+    showError("Error al cargar la configuración. Recarga la página.");
     return;
   }
 
-  // Obtener token o código de la URL
-  const authData = getTokenFromUrl();
+  // Escuchar cambios en el estado de autenticación
+  supabaseClient.auth.onAuthStateChange(async (event, session) => {
+    console.log("Evento de Auth:", event, session);
 
-  if (!authData) {
-    errorDiv.textContent = "Token inválido o expirado";
-    errorDiv.style.display = "block";
-    return;
-  }
-
-  if (authData.type === "code") {
-    // Flujo PKCE: intercambiar código por token
-    errorDiv.textContent = "Verificando enlace...";
-    errorDiv.style.display = "block";
-    errorDiv.style.backgroundColor = "#fef3cd";
-    errorDiv.style.color = "#856404";
-
-    accessToken = await exchangeCodeForToken(authData.value);
-
-    if (!accessToken) {
-      errorDiv.textContent =
-        "El enlace ha expirado o es inválido. Solicita uno nuevo.";
-      errorDiv.style.display = "block";
-      errorDiv.style.backgroundColor = "#ffe6e6";
-      errorDiv.style.color = "#d63031";
-      return;
+    if (event === "PASSWORD_RECOVERY") {
+      // El usuario ha llegado desde un enlace de recuperación
+      // Supabase ya ha procesado el código/token y establecido la sesión
+      hideMessages();
+      setFormEnabled(true);
+      console.log("Sesión de recuperación establecida correctamente");
+    } else if (event === "SIGNED_IN" && session) {
+      // A veces el evento puede ser SIGNED_IN en lugar de PASSWORD_RECOVERY
+      hideMessages();
+      setFormEnabled(true);
+      console.log("Usuario autenticado para cambio de contraseña");
+    } else if (event === "TOKEN_REFRESHED") {
+      // Token refrescado, mantener habilitado
+      setFormEnabled(true);
+    } else if (event === "SIGNED_OUT") {
+      showError("Sesión expirada. Solicita un nuevo enlace de recuperación.");
+      setFormEnabled(false);
     }
+  });
 
-    // Ocultar mensaje de verificación
-    errorDiv.style.display = "none";
-  } else {
-    // Flujo implícito: usar token directamente
-    accessToken = authData.value;
-  }
+  // Verificar si ya hay una sesión activa después de un momento
+  // Esto maneja el caso donde el evento ya se disparó antes de registrar el listener
+  setTimeout(async () => {
+    const {
+      data: { session },
+    } = await supabaseClient.auth.getSession();
+    if (session) {
+      hideMessages();
+      setFormEnabled(true);
+    } else {
+      // Verificar si hay parámetros en la URL que indiquen un intento de recuperación
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+
+      const hasCode = urlParams.has("code");
+      const hasToken =
+        urlParams.has("access_token") || hashParams.has("access_token");
+      const hasError = urlParams.has("error") || hashParams.has("error");
+
+      if (hasError) {
+        const errorDescription =
+          urlParams.get("error_description") ||
+          hashParams.get("error_description") ||
+          "Error desconocido";
+        showError(`Error: ${errorDescription}`);
+      } else if (!hasCode && !hasToken) {
+        showError(
+          "Enlace inválido. Asegúrate de usar el enlace completo del correo."
+        );
+      } else {
+        // Hay código o token pero no se estableció sesión - puede estar expirado
+        showError("El enlace ha expirado o es inválido. Solicita uno nuevo.");
+      }
+      setFormEnabled(false);
+    }
+  }, 2000);
 }
 
-// Iniciar la aplicación cuando se carga la página
-initApp();
-
-document.getElementById("resetForm").addEventListener("submit", async (e) => {
+// Manejar el envío del formulario
+resetForm.addEventListener("submit", async (e) => {
   e.preventDefault();
 
-  const password = document.getElementById("password").value;
-  const confirmPassword = document.getElementById("confirmPassword").value;
-  const errorDiv = document.getElementById("error");
-  const successDiv = document.getElementById("success");
-  const submitBtn = document.getElementById("submitBtn");
-  const btnText = document.getElementById("btnText");
-  const btnLoader = document.getElementById("btnLoader");
+  const password = passwordInput.value;
+  const confirmPassword = confirmPasswordInput.value;
 
-  errorDiv.style.display = "none";
-  successDiv.style.display = "none";
+  hideMessages();
 
+  // Validaciones
   if (password !== confirmPassword) {
-    errorDiv.textContent = "Las contraseñas no coinciden";
-    errorDiv.style.display = "block";
+    showError("Las contraseñas no coinciden");
     return;
   }
 
   if (password.length < 6) {
-    errorDiv.textContent = "La contraseña debe tener al menos 6 caracteres";
-    errorDiv.style.display = "block";
+    showError("La contraseña debe tener al menos 6 caracteres");
     return;
   }
 
-  if (!accessToken) {
-    errorDiv.textContent =
-      "Token inválido o expirado. Solicita un nuevo enlace.";
-    errorDiv.style.display = "block";
+  // Verificar sesión antes de intentar actualizar
+  const {
+    data: { session },
+  } = await supabaseClient.auth.getSession();
+  if (!session) {
+    showError(
+      "La sesión ha expirado. Solicita un nuevo enlace de recuperación."
+    );
     return;
   }
 
+  // Mostrar estado de carga
   submitBtn.disabled = true;
   btnText.style.display = "none";
   btnLoader.style.display = "inline-block";
 
   try {
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        apikey: SUPABASE_KEY,
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ password }),
+    // Actualizar la contraseña usando el cliente de Supabase
+    const { data, error } = await supabaseClient.auth.updateUser({
+      password: password,
     });
 
-    if (response.ok) {
-      successDiv.textContent = "¡Contraseña actualizada exitosamente!";
-      successDiv.style.display = "block";
-      document.getElementById("resetForm").reset();
-
-      setTimeout(() => {
-        window.close();
-      }, 3000);
+    if (error) {
+      console.error("Error al actualizar contraseña:", error);
+      showError(error.message || "Error al actualizar contraseña");
     } else {
-      const error = await response.json();
-      errorDiv.textContent = error.message || "Error al actualizar contraseña";
-      errorDiv.style.display = "block";
+      showSuccess(
+        "¡Contraseña actualizada correctamente! Ya puedes cerrar esta ventana e iniciar sesión en la app."
+      );
+      resetForm.style.display = "none"; // Ocultar formulario
+      setFormEnabled(false);
+
+      // Intentar cerrar la ventana después de 3 segundos
+      // Nota: Algunos navegadores bloquean window.close() si la ventana no fue abierta por script
+      setTimeout(() => {
+        try {
+          window.close();
+        } catch (e) {
+          // Si no se puede cerrar, no hacer nada - el usuario cerrará manualmente
+          console.log("No se pudo cerrar la ventana automáticamente");
+        }
+      }, 3000);
     }
   } catch (error) {
-    errorDiv.textContent = "Error de conexión. Intenta nuevamente.";
-    errorDiv.style.display = "block";
+    console.error("Error de conexión:", error);
+    showError("Error de conexión. Intenta nuevamente.");
   } finally {
     submitBtn.disabled = false;
     btnText.style.display = "inline";
     btnLoader.style.display = "none";
   }
 });
+
+// Iniciar la aplicación cuando se carga la página
+initApp();
