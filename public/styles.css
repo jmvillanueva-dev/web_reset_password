@@ -103,3 +103,7 @@ input:focus {
   border-radius: 8px;
   margin-bottom: 16px;
 }
+
+footer {
+  margin-top: 10px;
+}
