@@ -44,8 +44,13 @@ document.getElementById("resetForm").addEventListener("submit", async (e) => {
 
   // Obtener access token de la URL
   const hash = window.location.hash.substring(1);
-  const params = new URLSearchParams(hash);
-  const accessToken = params.get("access_token");
+  let params = new URLSearchParams(window.location.hash.substring(1));
+  let accessToken = params.get("access_token");
+
+  if (!accessToken) {
+    params = new URLSearchParams(window.location.search);
+    accessToken = params.get("access_token");
+  }
 
   if (!accessToken) {
     errorDiv.textContent = "Token inválido o expirado";
