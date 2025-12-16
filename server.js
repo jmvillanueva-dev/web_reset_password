@@ -32,6 +32,10 @@ try {
     res.sendFile(path.join(__dirname, "public", "reset-password.html"));
   });
 
+  app.get("/verify-email", (req, res) => {
+    res.sendFile(path.join(__dirname, "public", "verify-email.html"));
+  });
+
   app.listen(PORT, "0.0.0.0", () => {
     console.log("=== SERVER RUNNING ON PORT", PORT, "===");
   });
