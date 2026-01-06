@@ -34,6 +34,24 @@ async function loadConfig() {
   }
 }
 
+// Alternar visibilidad de contraseña
+function togglePasswordVisibility(inputId) {
+  const input = document.getElementById(inputId);
+  const button = input.nextElementSibling;
+  const eyeIcon = button.querySelector(".eye-icon");
+  const eyeOffIcon = button.querySelector(".eye-off-icon");
+
+  if (input.type === "password") {
+    input.type = "text";
+    eyeIcon.classList.add("hidden");
+    eyeOffIcon.classList.remove("hidden");
+  } else {
+    input.type = "password";
+    eyeIcon.classList.remove("hidden");
+    eyeOffIcon.classList.add("hidden");
+  }
+}
+
 // Validar contraseña en tiempo real
 function validatePassword() {
   const password = document.getElementById("password").value;
