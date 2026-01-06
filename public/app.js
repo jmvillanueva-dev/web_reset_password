@@ -180,7 +180,7 @@ function openApp() {
   const refreshToken =
     hashParams.get("refresh_token") || queryParams.get("refresh_token");
 
-  let deepLink = "loginpro://password-reset-success";
+  let deepLink = "apppetadopt://password-reset-success";
 
   if (accessToken) {
     deepLink += `?access_token=${encodeURIComponent(accessToken)}`;

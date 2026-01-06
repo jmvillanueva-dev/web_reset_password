@@ -150,7 +150,7 @@ function openApp() {
   const refreshToken =
     hashParams.get("refresh_token") || queryParams.get("refresh_token");
 
-  let deepLink = "loginpro://email-verified";
+  let deepLink = "apppetadopt://email-verified";
 
   if (accessToken) {
     deepLink += `?access_token=${encodeURIComponent(accessToken)}`;
